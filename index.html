@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0">
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+</head>
+<body>
+<div class="container">
+
+	<h1>FAST Apostille</h1>
+	<h6>それ以前には知りえない事実をそれ以降は改ざんできない方法で記録</h6>
+
+<ul>
+	<li>抽出したハッシュ値をSymbolブロックチェーンに記録できます(無料)</li>
+	<li>ファイル自体は記録されません。ハッシュの種類はSHA256です。</li>
+</ul>
+
+	<div class="collapse" id="div1">
+
+		<div id="cosigners-ctrl">
+
+			<form>
+				デジタル指紋を抽出します<br>
+				<div class="mb-3 d-flex">
+				  <input type="file" class="form-control me-2" id="file" />
+				</div>	
+			</form>
+			
+		<div>	
+	</div><!-- div1 -->
+	
+	<div class="collapse" id="div2">
+
+		<h5>ファイルハッシュ</h5>
+		<div id="filehash"></div>
+
+		<div>
+			<button type="button" id="button_transfer" class="btn btn-primary">
+				<span id="spinner_transfer" class="collapse spinner-border spinner-border-sm" role="status"></span>
+				ブロックチェーンに記録
+			</button>
+		</div>
+	</div><!-- div2 -->
+
+	<div class="collapse" id="div3">
+
+		<h5>トランザクションハッシュ</h5>
+		<div id="tx_info">
+			<ul></ul>
+		</div>
+
+		<div>
+			<button type="button" id="button_showkey" class="btn btn-primary">
+				秘密鍵を表示
+			</button>
+		</div>
+
+		<div id="prikey"></div>
+	</div><!-- div3 -->
+		
+</div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+<script
+	src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+	integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+	crossorigin="anonymous">
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+
+<script src="https://xembook.github.io/nem2-browserify/symbol-sdk-pack-2.0.3.js"></script>
+<script src="https://xembook.github.io/xembook/xembook_config.js"></script>
+<script>
+var nodelist = NODES;
+var explorer = EXPLORER;
+//const nodelist = TEST_NODES;
+//const explorer = TEST_EXPLORER;
+
+</script>
+<script src="xembook-core.js"></script>
+<script>
+var payload ="";
+
+startApp(
+	//初期設定完了後
+	function(){
+
+		listener.newBlock();
+		if (1 < document.location.search.length) {
+
+			const query = document.location.search.substring(1);
+			const prms = query.split('&');
+			const item = new Object();
+			for (var i = 0; i < prms.length; i++) {
+				const elm   = prms[i].split('=');
+				const idx   = decodeURIComponent(elm[0]);
+				const val   = decodeURIComponent(elm[1]);
+				item[idx] = decodeURIComponent(val);
+			}
+			if("payload" in item){ payload = item["payload"];}
+		}
+
+		$('#div1').collapse('show');
+	},
+	//リスナー再起動後
+	function(){
+		listener.newBlock();
+	},
+	//リスナー受信後
+	async function(txs){
+	},
+	//スキャン完了後
+	function(data){
+	}
+);
+
+function loadImage(fileID) {
+
+	var fileList = document.getElementById(fileID).files;
+	var reader = new FileReader();
+	file = fileList[0];
+	reader.readAsDataURL(file, "utf-8");
+	reader.onload = (function(theFile) {
+		return function(e) {
+
+			var data = e.target.result;
+			var rawFileContent = CryptoJS.enc.Base64.parse(data.split(/,(.+)?/)[1]);
+			var fileContent = CryptoJS.SHA256(rawFileContent);
+			$("#filehash").text(fileContent.toString());
+			$('#div2').collapse('show');
+
+		};
+	})(file);
+}
+
+//■■■CONTROLLER■■■
+
+//新規作成
+var isNewAccount = true;
+var asset;
+$("#button_transfer").click(async function(){
+
+	asset = nem.Account.generateNewAccount(networkType);
+	console.log(asset);
+	$('#button_transfer').prop('disabled', true);
+	$('#spinner_transfer').collapse('show');
+
+	$.ajax({
+		url: "https://ec2.xembook.net/fast/" + asset.address.plain()  ,
+		type: 'GET',
+		error: function(XMLHttpRequest) {
+			console.log( XMLHttpRequest);
+
+		}
+	}).done(function(res){
+		console.log(res);
+	});
+	
+	var assetListener = listener.confirmed(asset.address)
+	.subscribe(async x=>{
+
+		if(isNewAccount){
+			var apostilleHash = "fe4e545983" + $("#filehash").text();
+
+			const tx = nem.TransferTransaction.create(
+			    nem.Deadline.create(epochAdjustment),
+			    asset.address, 
+			    [],
+			    nem.PlainMessage.create(apostilleHash),
+			    networkType
+			).setMaxFee(100);
+			const signedTx = asset.sign(tx, generationHash);
+			console.log(signedTx);
+			txRepo.announce(signedTx)
+			.subscribe(x2=>{
+				console.log(x2);
+		
+			});
+
+			isNewAccount = false;
+		}else{
+		
+			$('#spinner_transfer').collapse('hide');
+			$('#button_transfer').prop('disabled', false);
+			$('#tx_info ul')
+			.append('<li>' + x.transactionInfo.hash + '</li>');
+			$('#tx_info ul')
+			.append('<li><a target="_blank" href="' + explorer + '/transactions/' + x.transactionInfo.hash + '">エクスプローラーで確認</a></li>');
+
+			$('#div3').collapse('show');
+			
+		}
+		console.log(x);
+	});
+});
+
+$("#button_showkey").click(async function(){
+	$("#prikey").text(asset.privateKey);
+});
+
+$('#file').change(function(e) {
+	loadImage('file');
+});
+</script>
+</body>
+</html>
